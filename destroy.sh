@@ -27,7 +27,7 @@ brctl delbr sw-lan
 brctl delbr sw-ext
 
 # debianbase en dernier
-clist="ext dmz dmz2 fw lan"
+clist="ext dmz2 dmz fw lan"
 
 for c in $clist
 do
