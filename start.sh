@@ -14,10 +14,13 @@ ip link set sw-dmz up
 ip link set sw-lan up
 ip link set sw-ext up
 
+brctl addbr sw-ispfw &> /dev/null
+ip link set sw-ispfw up
+
 ifup eth0 &> /dev/null
 ifup sw-ext &> /dev/null
 
-clist="fw dmz dmz2 lan ext"
+clist="r1 fw dmz dmz2 lan ext"
 
 for c in $clist
 do
@@ -36,8 +39,8 @@ while [ "$gw" == "" ]
 do
   echo -n "."
   sleep 2
-  # Récupérer l'IP du firewall sur la patte 'extérieure'
-  gw=$(lxc-attach --name fw -- ip a show dev eth0 | grep 'inet ' | awk '{print $2}' | cut -d '/' -f 1)
+  # Récupérer l'IP de r1 sur la patte 'extérieure'
+  gw=$(lxc-attach --name r1 -- ip a show dev eth0 | grep 'inet ' | awk '{print $2}' | cut -d '/' -f 1)
 done
 
 echo -n " "

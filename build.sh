@@ -112,6 +112,9 @@ ip link set sw-dmz up
 ip link set sw-lan up
 ip link set sw-ext up
 
+brctl addbr sw-ispfw &> /dev/null
+ip link set sw-ispfw up
+
 ifdown eth0
 sed -i '/eth0/d' /etc/network/interfaces
 
@@ -181,7 +184,9 @@ EOF
 
   lxc-attach --name $cname -- /bin/bash -c "cat >> /etc/network/interfaces" << EOF
 auto eth0
-iface eth0 inet dhcp
+iface eth0 inet static
+  address 10.0.1.1/30
+  gateway 10.0.1.2
 EOF
 
   lxc-attach --name $cname -- /bin/bash -c "cat >> /etc/network/interfaces" << EOF
@@ -225,6 +230,8 @@ fi
 lxc-attach --name $cname -- /bin/bash -c 'pw=$(mkpasswd vitrygtr); useradd -p $pw admin -s /bin/bash -m'
 
 lxc-stop -n $cname
+
+sed -E -i 's/sw-ext/sw-ispfw/' /var/lib/lxc/$cname/config
 
 ####
 # Web3 (EXT)
@@ -393,6 +400,61 @@ lxc-attach --name $cname -- /bin/bash -c 'pw=$(mkpasswd vitrygtr); useradd -p $p
 lxc-stop -n $cname
 
 sed -E -i 's/sw-ext/sw-lan/' /var/lib/lxc/$cname/config
+
+####
+# R1 (ISP)
+####
+
+cname="r1"
+echo "--- Building $cname ---"
+
+lxc-copy --name debianbase -s --newname $cname
+
+if [ $version -eq 9 ]
+then
+  confkey1="lxc.network"
+elif [ $version -eq 10 ]
+then
+  confkey1="lxc.net.1"
+fi
+
+echo "$confkey1.type = veth" >> /var/lib/lxc/$cname/config
+echo "$confkey1.name = eth1" >> /var/lib/lxc/$cname/config
+echo "$confkey1.link = sw-ispfw" >> /var/lib/lxc/$cname/config
+
+lxc-start --name $cname
+
+# Attendre d'avoir une IP ... (?)
+sleep 5
+
+if [ $advinfra -eq 1 ]
+then
+
+  lxc-attach --name $cname -- /bin/bash -c "cat > /etc/network/interfaces" << EOF
+auto lo
+iface lo inet loopback
+auto eth0
+iface eth0 inet dhcp
+auto eth1
+iface eth1 inet static
+  address 10.0.1.2/30
+  up ip route add 203.0.113.0/24 via 10.0.1.1
+  down ip route del 203.0.113.0/24 via 10.0.1.1
+  up ip route add 192.0.2.0/24 via 10.0.1.1
+  down ip route del 192.0.2.0/24 via 10.0.1.1
+EOF
+fi
+
+#lxc-attach --name $cname -- ifup eth0
+
+if [ $advinfra -eq 1 ]
+then
+  lxc-attach --name $cname -- sed -E -i 's/^#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
+fi
+
+lxc-attach --name $cname -- /bin/bash -c 'pw=$(mkpasswd vitrygtr); useradd -p $pw admin -s /bin/bash -m'
+
+lxc-stop -n $cname
 
 echo "L'infra est prête ! Reboot (indispensable) dans 5 secondes ..."
 

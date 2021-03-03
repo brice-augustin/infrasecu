@@ -26,8 +26,11 @@ brctl delbr sw-dmz
 brctl delbr sw-lan
 brctl delbr sw-ext
 
+ip link set sw-ispfw down
+brctl delbr sw-ispfw
+
 # debianbase en dernier
-clist="ext dmz dmz2 fw lan"
+clist="ext dmz dmz2 fw lan r1"
 
 for c in $clist
 do
