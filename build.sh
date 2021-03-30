@@ -47,6 +47,9 @@ function debianbase()
     confkey="lxc.net.0"
   fi
 
+  # Pour socat (et openvpn), création device tun
+  echo "lxc.mount.entry = /dev/net/tun dev/net/tun none bind create=file" >> /var/lib/lxc/debianbase/config
+
   echo "$confkey.type = veth" >> /var/lib/lxc/debianbase/config
   echo "$confkey.name = eth0" >> /var/lib/lxc/debianbase/config
   echo "$confkey.link = sw-ext" >> /var/lib/lxc/debianbase/config
@@ -71,8 +74,8 @@ EOF
   lxc-attach --name debianbase -- ifup eth0
 
   lxc-attach --name debianbase -- /bin/bash -c "apt update -y" &> /dev/null
-  # syslog-ng ?
-  lxc-attach --name debianbase -- /bin/bash -c "apt-get install -y iputils-ping dnsutils nano tcpdump curl whois netcat" &> /dev/null
+  # syslog-ng pour les log du firewall
+  lxc-attach --name debianbase -- /bin/bash -c "apt-get install -y iputils-ping dnsutils nano tcpdump curl whois netcat socat syslog-ng traceroute" &> /dev/null
 
   lxc-stop -n debianbase
 }
@@ -81,6 +84,9 @@ EOF
 # Packages
 ####
 apt -y update
+
+if false
+then
 
 # WireGuard doit être installé sur l'hôte pour fonctionner dans les conteneurs,
 # sinon "unsupported operation" ... XXX Comprendre pourquoi
@@ -103,6 +109,8 @@ apt -y update
 
 apt -y install wireguard
 
+fi
+
 apt -y install lxc
 
 brctl addbr sw-dmz &> /dev/null
@@ -114,6 +122,12 @@ ip link set sw-ext up
 
 brctl addbr sw-ispfw &> /dev/null
 ip link set sw-ispfw up
+
+brctl addbr sw-ispfiliale &> /dev/null
+ip link set sw-ispfiliale up
+
+brctl addbr sw-filiale &> /dev/null
+ip link set sw-filiale up
 
 ifdown eth0
 sed -i '/eth0/d' /etc/network/interfaces
@@ -404,7 +418,6 @@ sed -E -i 's/sw-ext/sw-lan/' /var/lib/lxc/$cname/config
 ####
 # R1 (ISP)
 ####
-
 cname="r1"
 echo "--- Building $cname ---"
 
@@ -413,14 +426,20 @@ lxc-copy --name debianbase -s --newname $cname
 if [ $version -eq 9 ]
 then
   confkey1="lxc.network"
+  confkey2=$confkey1
 elif [ $version -eq 10 ]
 then
   confkey1="lxc.net.1"
+  confkey2="lxc.net.2"
 fi
 
 echo "$confkey1.type = veth" >> /var/lib/lxc/$cname/config
 echo "$confkey1.name = eth1" >> /var/lib/lxc/$cname/config
 echo "$confkey1.link = sw-ispfw" >> /var/lib/lxc/$cname/config
+
+echo "$confkey2.type = veth" >> /var/lib/lxc/$cname/config
+echo "$confkey2.name = eth2" >> /var/lib/lxc/$cname/config
+echo "$confkey2.link = sw-ispfiliale" >> /var/lib/lxc/$cname/config
 
 lxc-start --name $cname
 
@@ -442,6 +461,11 @@ iface eth1 inet static
   down ip route del 203.0.113.0/24 via 10.0.1.1
   up ip route add 192.0.2.0/24 via 10.0.1.1
   down ip route del 192.0.2.0/24 via 10.0.1.1
+auto eth2
+iface eth2 inet static
+  address 10.0.1.5/30
+  up ip route add 198.51.100.0/24 via 10.0.1.6
+  down ip route del 198.51.100.0/24 via 10.0.1.6
 EOF
 fi
 
@@ -456,6 +480,98 @@ lxc-attach --name $cname -- /bin/bash -c 'pw=$(mkpasswd vitrygtr); useradd -p $p
 
 lxc-stop -n $cname
 
+####
+# R2 (Filiale)
+####
+cname="r2"
+echo "--- Building $cname ---"
+
+lxc-copy --name debianbase -s --newname $cname
+
+if [ $version -eq 9 ]
+then
+  confkey1="lxc.network"
+elif [ $version -eq 10 ]
+then
+  confkey1="lxc.net.1"
+fi
+
+echo "$confkey1.type = veth" >> /var/lib/lxc/$cname/config
+echo "$confkey1.name = eth1" >> /var/lib/lxc/$cname/config
+echo "$confkey1.link = sw-ispfiliale" >> /var/lib/lxc/$cname/config
+
+lxc-start --name $cname
+
+# Attendre d'avoir une IP ... (?)
+sleep 5
+
+if [ $advinfra -eq 1 ]
+then
+
+  lxc-attach --name $cname -- /bin/bash -c "cat > /etc/network/interfaces" << EOF
+auto lo
+iface lo inet loopback
+auto eth0
+iface eth0 inet static
+  address 198.51.100.1/24
+auto eth1
+iface eth1 inet static
+  address 10.0.1.6/30
+  gateway 10.0.1.5
+EOF
+fi
+
+#lxc-attach --name $cname -- ifup eth0
+
+if [ $advinfra -eq 1 ]
+then
+  lxc-attach --name $cname -- sed -E -i 's/^#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
+fi
+
+lxc-attach --name $cname -- /bin/bash -c 'pw=$(mkpasswd vitrygtr); useradd -p $pw admin -s /bin/bash -m'
+
+lxc-stop -n $cname
+
+sed -E -i 's/sw-ext/sw-filiale/' /var/lib/lxc/$cname/config
+
+####
+# fil (Filiale)
+####
+
+cname="fil"
+echo "--- Building $cname ---"
+
+lxc-copy --name debianbase -s --newname $cname
+lxc-start --name $cname
+
+# Attendre d'avoir une IP ... (?)
+sleep 5
+
+# Install packages while we have direct access to the real internet
+lxc-attach --name $cname -- /bin/bash -c "apt-get install -y curl" &> /dev/null
+
+#lxc-attach --name $cname -- ifdown eth0
+
+if [ $advinfra -eq 1 ]
+then
+
+  lxc-attach --name $cname -- /bin/bash -c "cat > /etc/network/interfaces" << EOF
+auto lo
+iface lo inet loopback
+auto eth0
+iface eth0 inet static
+  address 198.51.100.100/24
+  gateway 198.51.100.1
+EOF
+fi
+
+#lxc-attach --name $cname -- ifup eth0
+
+lxc-attach --name $cname -- /bin/bash -c 'pw=$(mkpasswd vitrygtr); useradd -p $pw admin -s /bin/bash -m'
+
+lxc-stop -n $cname
+
+sed -E -i 's/sw-ext/sw-filiale/' /var/lib/lxc/$cname/config
 echo "L'infra est prête ! Reboot (indispensable) dans 5 secondes ..."
 
 sleep 5

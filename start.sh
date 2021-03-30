@@ -17,10 +17,16 @@ ip link set sw-ext up
 brctl addbr sw-ispfw &> /dev/null
 ip link set sw-ispfw up
 
+brctl addbr sw-ispfiliale &> /dev/null
+ip link set sw-ispfiliale up
+
+brctl addbr sw-filiale &> /dev/null
+ip link set sw-filiale up
+
 ifup eth0 &> /dev/null
 ifup sw-ext &> /dev/null
 
-clist="r1 fw dmz dmz2 lan ext"
+clist="fil r1 r2 fw dmz dmz2 lan ext"
 
 for c in $clist
 do

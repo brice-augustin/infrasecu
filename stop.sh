@@ -6,7 +6,7 @@ then
   exit
 fi
 
-clist="r1 fw dmz dmz2 lan ext"
+clist="fil r1 r2 fw dmz2 dmz lan ext"
 
 for c in $clist
 do
