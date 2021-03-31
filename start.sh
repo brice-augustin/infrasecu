@@ -17,7 +17,7 @@ ip link set sw-ext up
 ifup eth0 &> /dev/null
 ifup sw-ext &> /dev/null
 
-clist="fw dmz dmz2 lan ext"
+clist="fw dmz dmz2 lan proxy ext"
 
 for c in $clist
 do

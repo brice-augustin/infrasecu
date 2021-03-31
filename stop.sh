@@ -6,7 +6,7 @@ then
   exit
 fi
 
-clist="fw dmz dmz2 lan ext"
+clist="fw dmz dmz2 lan proxy ext"
 
 for c in $clist
 do
