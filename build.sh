@@ -47,6 +47,9 @@ function debianbase()
     confkey="lxc.net.0"
   fi
 
+  # Pour socat (et openvpn), création device tun
+  echo "lxc.mount.entry = /dev/net/tun dev/net/tun none bind create=file" >> /var/lib/lxc/debianbase/config
+
   echo "$confkey.type = veth" >> /var/lib/lxc/debianbase/config
   echo "$confkey.name = eth0" >> /var/lib/lxc/debianbase/config
   echo "$confkey.link = sw-ext" >> /var/lib/lxc/debianbase/config
@@ -71,8 +74,9 @@ EOF
   lxc-attach --name debianbase -- ifup eth0
 
   lxc-attach --name debianbase -- /bin/bash -c "apt update -y" &> /dev/null
-  # syslog-ng ?
-  lxc-attach --name debianbase -- /bin/bash -c "apt-get install -y iputils-ping dnsutils nano tcpdump curl whois netcat" &> /dev/null
+
+  # syslog-ng pour les log du firewall
+  lxc-attach --name debianbase -- /bin/bash -c "apt-get install -y iputils-ping dnsutils nano tcpdump curl whois netcat socat syslog-ng traceroute" &> /dev/null
 
   lxc-stop -n debianbase
 }
@@ -385,6 +389,38 @@ iface eth0 inet static
   gateway 192.0.2.1
 EOF
 fi
+
+#lxc-attach --name $cname -- ifup eth0
+
+lxc-attach --name $cname -- /bin/bash -c 'pw=$(mkpasswd vitrygtr); useradd -p $pw admin -s /bin/bash -m'
+
+lxc-stop -n $cname
+
+sed -E -i 's/sw-ext/sw-lan/' /var/lib/lxc/$cname/config
+
+####
+# proxy (LAN)
+####
+
+cname="proxy"
+echo "--- Building $cname ---"
+
+lxc-copy --name debianbase -s --newname $cname
+lxc-start --name $cname
+
+# Attendre d'avoir une IP ... (?)
+sleep 5
+
+#lxc-attach --name $cname -- ifdown eth0
+
+lxc-attach --name $cname -- /bin/bash -c "cat > /etc/network/interfaces" << EOF
+auto lo
+iface lo inet loopback
+auto eth0
+iface eth0 inet static
+  address 192.0.2.2/24
+  gateway 192.0.2.1
+EOF
 
 #lxc-attach --name $cname -- ifup eth0
 
