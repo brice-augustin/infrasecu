@@ -5,8 +5,8 @@ then
   echo "sudo $0"
   exit
 fi
-
-clist="fw dmz dmz2 lan proxy ext"
+# added ceo and sysadmin
+clist="fw dmz dmz2 lan proxy ext ceo sysadmin"
 
 for c in $clist
 do
