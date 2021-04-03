@@ -27,7 +27,7 @@ brctl delbr sw-lan
 brctl delbr sw-ext
 
 # debianbase en dernier
-clist="ext dmz2 dmz fw lan proxy"
+clist="ext dmz2 dmz fw lan proxy ceo sysadmin"
 
 for c in $clist
 do
