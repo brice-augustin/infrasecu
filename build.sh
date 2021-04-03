@@ -430,6 +430,83 @@ lxc-stop -n $cname
 
 sed -E -i 's/sw-ext/sw-lan/' /var/lib/lxc/$cname/config
 
+echo "Demarrage de $cname"
+lxc-start --name $cname
+
+#stop the container lan to clone before copy
+echo "Extinction de lan pour cloner ceo et sysadmin"
+lxc-stop --name lan
+lxc-copy --name lan -s --newname ceo
+lxc-copy --name lan -s --newname sysadmin
+
+# restarting containers
+echo "Predemarrage des nouveaux conteneurs avant leur configuration"
+lxc-start --name lan
+lxc-start --name ceo
+lxc-start --name sysadmin
+
+
+
+
+# defining the cname as ceo 
+cname="ceo"
+echo "--- Building $cname ---"
+
+# Attendre d'avoir une IP ... (?)
+sleep 5
+
+#lxc-attach --name $cname -- ifdown eth0
+
+lxc-attach --name $cname -- /bin/bash -c "cat > /etc/network/interfaces" << EOF
+auto lo
+iface lo inet loopback
+auto eth0
+iface eth0 inet static
+  address 192.0.2.50/24
+  gateway 192.0.2.1
+EOF
+
+#lxc-attach --name $cname -- ifup eth0
+# defining root credentials
+lxc-attach --name $cname -- /bin/bash -c 'pw=$(mkpasswd vitrygtr); useradd -p $pw admin -s /bin/bash -m'
+
+lxc-stop -n $cname
+
+sed -E -i 's/sw-ext/sw-lan/' /var/lib/lxc/$cname/config
+
+echo "Demarrage de $cname"
+lxc-start --name $cname
+
+# end of CEO
+
+# defining the cname as sysadmin 
+cname="sysadmin"
+echo "--- Building $cname ---"
+
+# Attendre d'avoir une IP ... (?)
+sleep 5
+
+#lxc-attach --name $cname -- ifdown eth0
+
+lxc-attach --name $cname -- /bin/bash -c "cat > /etc/network/interfaces" << EOF
+auto lo
+iface lo inet loopback
+auto eth0
+iface eth0 inet static
+  address 192.0.2.42/24
+  gateway 192.0.2.1
+EOF
+
+#lxc-attach --name $cname -- ifup eth0
+# defining root credentials
+lxc-attach --name $cname -- /bin/bash -c 'pw=$(mkpasswd vitrygtr); useradd -p $pw admin -s /bin/bash -m'
+
+lxc-stop -n $cname
+
+sed -E -i 's/sw-ext/sw-lan/' /var/lib/lxc/$cname/config
+
+
+
 echo "L'infra est prête ! Reboot (indispensable) dans 5 secondes ..."
 
 sleep 5
