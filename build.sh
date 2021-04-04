@@ -22,6 +22,10 @@ then
   exit
 fi
 
+#added a line for creating uuidd
+mkdir -p /var/run 
+
+
 version=$(cat /etc/debian_version | cut -d '.' -f 1)
 
 advinfra=1
@@ -48,7 +52,9 @@ function debianbase()
   fi
 
   # Pour socat (et openvpn), création device tun
-  echo "lxc.mount.entry = /dev/net/tun dev/net/tun none bind create=file" >> /var/lib/lxc/debianbase/config
+  # echo "lxc.mount.entry = /dev/net/tun dev/net/tun none bind, create=file" >> /var/lib/lxc/debianbase/config # even not working with comma between bind and create --> https://blog.dob.sk/2017/01/22/tun-lxc-unprivileged-container/
+  # echo "lxc.mount.entry = /dev/net/tun dev/net/tun none bind create=file" >> /var/lib/lxc/debianbase/config
+  # echo "lxc.mount.entry = /dev/net/tun dev/net/tun none bind create=file" >> /var/lib/lxc/debianbase/config #to be removed bug failed to get pid for containers
 
   echo "$confkey.type = veth" >> /var/lib/lxc/debianbase/config
   echo "$confkey.name = eth0" >> /var/lib/lxc/debianbase/config
@@ -77,6 +83,7 @@ EOF
 
   # syslog-ng pour les log du firewall
   lxc-attach --name debianbase -- /bin/bash -c "apt-get install -y iputils-ping dnsutils nano tcpdump curl whois netcat socat syslog-ng traceroute" &> /dev/null
+  # lxc-attach --name debianbase -- /bin/bash -c "apt-get install -y iputils-ping dnsutils nano tcpdump curl whois netcat" &> /dev/null # tested with work well
 
   lxc-stop -n debianbase
 }
@@ -429,6 +436,83 @@ lxc-attach --name $cname -- /bin/bash -c 'pw=$(mkpasswd vitrygtr); useradd -p $p
 lxc-stop -n $cname
 
 sed -E -i 's/sw-ext/sw-lan/' /var/lib/lxc/$cname/config
+
+echo "Demarrage de $cname"
+lxc-start --name $cname
+
+#stop the container lan to clone before copy
+echo "Extinction de lan pour cloner ceo et sysadmin"
+# lxc-stop --name lan #to remove
+lxc-copy --name lan -s --newname ceo
+lxc-copy --name lan -s --newname sysadmin
+
+# restarting containers
+echo "Predemarrage des nouveaux conteneurs avant leur configuration"
+lxc-start --name lan
+lxc-start --name ceo
+lxc-start --name sysadmin
+
+
+
+
+# defining the cname as ceo 
+cname="ceo"
+echo "--- Building $cname ---"
+
+# Attendre d'avoir une IP ... (?)
+sleep 5
+
+#lxc-attach --name $cname -- ifdown eth0
+
+lxc-attach --name $cname -- /bin/bash -c "cat > /etc/network/interfaces" << EOF
+auto lo
+iface lo inet loopback
+auto eth0
+iface eth0 inet static
+  address 192.0.2.50/24
+  gateway 192.0.2.1
+EOF
+
+#lxc-attach --name $cname -- ifup eth0
+# removing for defining root credentials
+# lxc-attach --name $cname -- /bin/bash -c 'pw=$(mkpasswd vitrygtr); useradd -p $pw admin -s /bin/bash -m'
+
+lxc-stop -n $cname
+
+sed -E -i 's/sw-ext/sw-lan/' /var/lib/lxc/$cname/config
+
+echo "Demarrage de $cname"
+lxc-start --name $cname
+
+# end of CEO
+
+# defining the cname as sysadmin 
+cname="sysadmin"
+echo "--- Building $cname ---"
+
+# Attendre d'avoir une IP ... (?)
+sleep 5
+
+#lxc-attach --name $cname -- ifdown eth0
+
+lxc-attach --name $cname -- /bin/bash -c "cat > /etc/network/interfaces" << EOF
+auto lo
+iface lo inet loopback
+auto eth0
+iface eth0 inet static
+  address 192.0.2.42/24
+  gateway 192.0.2.1
+EOF
+
+#lxc-attach --name $cname -- ifup eth0
+# removing for defining root credentials
+# lxc-attach --name $cname -- /bin/bash -c 'pw=$(mkpasswd vitrygtr); useradd -p $pw admin -s /bin/bash -m'
+
+lxc-stop -n $cname
+
+sed -E -i 's/sw-ext/sw-lan/' /var/lib/lxc/$cname/config
+
+
 
 echo "L'infra est prête ! Reboot (indispensable) dans 5 secondes ..."
 
